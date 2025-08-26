@@ -91,7 +91,7 @@ const COMMIT_TYPES = {
 // Configuration for your Figma libraries
 const LIBRARY_CONFIG = {
   'FFGrhBbe4JRpbBIuvOPhNP': {
-    name: 'Test Library',
+    name: 'TestLibrary',
     channel: '#test-figma-updates',
     rules: {
       alwaysNotify: ['feat', 'breaking', 'fix', 'update'],
