@@ -90,26 +90,9 @@ const COMMIT_TYPES = {
 
 // Configuration for your Figma libraries
 const LIBRARY_CONFIG = {
-  'S2aPy6GYy0dID7NvarJrSV': {
-    name: 'Fabric Foundations',
-    channel: '#xfn-ds-fabric-updates',
-    rules: {
-      // Always notify for these types
-      alwaysNotify: ['feat', 'breaking', 'fix'],
-      // Never notify for these (unless forced with !)
-      neverNotify: ['chore', 'docs', 'test'],
-      // Throttle settings by priority
-      throttleMinutes: {
-        critical: 0,    // No throttling for breaking changes
-        high: 15,       // 15 min between high priority
-        medium: 30,     // 30 min between medium priority  
-        low: 60         // 1 hour between low priority
-      }
-    }
-  },
-  'HnYrd6FfB4O1VUV9GuuWe6': {
-    name: 'Fabric Components',
-    channel: '#xfn-ds-fabric-updates',
+  'FFGrhBbe4JRpbBIuvOPhNP': {
+    name: 'Test Library',
+    channel: '#test-figma-updates',
     rules: {
       alwaysNotify: ['feat', 'breaking', 'fix', 'update'],
       neverNotify: ['chore', 'docs', 'patch'],
@@ -118,20 +101,6 @@ const LIBRARY_CONFIG = {
         high: 30,
         medium: 60,
         low: 120
-      }
-    }
-  },
-  'YOUR_FIGMA_FILE_KEY_3': {
-    name: 'Icons & Assets', 
-    channel: '#design-updates',
-    rules: {
-      alwaysNotify: ['feat', 'breaking'],
-      neverNotify: ['chore', 'docs', 'test', 'patch'],
-      throttleMinutes: {
-        critical: 0,
-        high: 60,
-        medium: 120,
-        low: 240  // 4 hours for low priority
       }
     }
   }
