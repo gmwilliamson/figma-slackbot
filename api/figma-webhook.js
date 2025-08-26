@@ -316,25 +316,18 @@ export default async function handler(req, res) {
   }
   
   try {
-    // ADD DEBUG LOGGING HERE:
-    console.log('=== WEBHOOK DEBUG ===');
-    console.log('Headers:', JSON.stringify(req.headers, null, 2));
-    console.log('Body:', JSON.stringify(req.body, null, 2));
-    console.log('Signature header:', req.headers['x-figma-signature']);
-    console.log('Environment secret exists:', !!process.env.FIGMA_WEBHOOK_SECRET);
-    console.log('Environment secret length:', process.env.FIGMA_WEBHOOK_SECRET?.length);
-    console.log('===================');
-    // Verify webhook signature
-    const signature = req.headers['x-figma-signature'];
+    // Verify webhook using passcode in body instead of signature header
     const webhookSecret = process.env.FIGMA_WEBHOOK_SECRET;
+    const providedPasscode = req.body.passcode;
     
-    if (!webhookSecret || !signature) {
+    if (!webhookSecret || !providedPasscode) {
+      console.log('Missing webhook secret or passcode');
       return res.status(401).json({ error: 'Authentication failed' });
     }
     
-    const body = JSON.stringify(req.body);
-    if (!verifyWebhookSignature(body, signature, webhookSecret)) {
-      return res.status(401).json({ error: 'Invalid signature' });
+    if (providedPasscode !== webhookSecret) {
+      console.log('Passcode verification failed');
+      return res.status(401).json({ error: 'Invalid passcode' });
     }
     
     // Parse webhook data
