@@ -260,7 +260,7 @@ async function sendSlackNotification({ library, fileKey, publishedBy, parsedComm
   
   // Add priority flag to title if present (breaking or manual priority)
   if (parsedCommit.type === 'breaking' || /\bpriority\b/i.test(parsedCommit.raw)) {
-    title += ` - ⚠️ *PLEASE REVIEW* ⚠️`;
+    title += ` - ⚠️ PLEASE REVIEW ⚠️`;
   }
   
   title += `*`;
@@ -296,22 +296,13 @@ async function sendSlackNotification({ library, fileKey, publishedBy, parsedComm
     });
   }
   
-  // Add library name section
-  blocks.push({
-    type: 'section',
-    text: {
-      type: 'mrkdwn',
-      text: `Library: \`${library.name}\``
-    }
-  });
-  
   // Context footer
   blocks.push({
     type: 'context',
     elements: [
       {
         type: 'mrkdwn',
-        text: `Published by *${publishedBy}* • <${figmaUrl}|View in Figma>`
+        text: `Published by *${publishedBy}* in *${library.name}* • <${figmaUrl}|View in Figma>`
       }
     ]
   });
