@@ -12,66 +12,56 @@ const COMMIT_TYPES = {
   feat: {
     emoji: '✨',
     label: 'Feature',
-    notify: true,
-    priority: 'high'
+    notify: true
   },
   fix: {
     emoji: '🐛',
-    label: 'Bugfix', 
-    notify: true,
-    priority: 'medium'
+    label: 'Fix', 
+    notify: true
   },
   update: {
     emoji: '🔄',
     label: 'Update',
-    notify: true,
-    priority: 'medium'
+    notify: true
   },
   patch: {
     emoji: '🩹',
     label: 'Patch',
-    notify: false, // Only notify if forced
-    priority: 'low'
+    notify: false // Only notify if forced
   },
   docs: {
     emoji: '📚',
     label: 'Documentation',
-    notify: false,
-    priority: 'low'
+    notify: false
   },
   style: {
     emoji: '💄',
     label: 'Style',
-    notify: false,
-    priority: 'low'
+    notify: false
   },
   refactor: {
     emoji: '♻️',
     label: 'Refactor',
-    notify: true,
-    priority: 'medium'
+    notify: true
   },
   perf: {
     emoji: '⚡',
     label: 'Performance',
-    notify: true,
-    priority: 'high'
+    notify: true
   },
   test: {
     emoji: '🧪',
     label: 'Test',
-    notify: false,
-    priority: 'low'
+    notify: false
   },
   chore: {
     emoji: '🔧',
     label: 'Chore',
-    notify: false,
-    priority: 'low'
+    notify: false
   },
   breaking: {
     emoji: '💥',
-    label: 'BREAKING CHANGE',
+    label: 'BREAKING',
     notify: true,
     priority: 'critical'
   }
@@ -88,8 +78,7 @@ const LIBRARY_CONFIG = {
       throttleMinutes: {
         critical: 0,
         high: 30,
-        medium: 60,
-        low: 120
+        normal: 60
       }
     }
   }
@@ -147,6 +136,17 @@ function parseSemanticCommit(description) {
     }
   }
   
+  // Check if priority flag is set anywhere in the description
+  const hasPriorityFlag = /\bpriority\b/i.test(description);
+  
+  // Set priority based on type and flags
+  let priority = 'normal';
+  if (type.toLowerCase() === 'breaking') {
+    priority = 'critical'; // Breaking changes are always critical for throttling
+  } else if (hasPriorityFlag) {
+    priority = 'high'; // Any priority flag gets high priority for throttling
+  }
+
   return {
     isValid: true,
     type: type.toLowerCase(),
@@ -154,6 +154,7 @@ function parseSemanticCommit(description) {
     components: components,
     bulletPoints: bulletPoints,
     isForced: !!forceFlag,
+    priority: priority,
     message: message,
     raw: description,
     commitType: COMMIT_TYPES[type.toLowerCase()]
@@ -190,7 +191,7 @@ function shouldSendNotification(parsedCommit, rules, fileKey) {
   // Check if type is in alwaysNotify list
   if (rules.alwaysNotify?.includes(type)) {
     // Still need to check throttling
-    const throttleCheck = checkThrottling(fileKey, commitType.priority, rules);
+    const throttleCheck = checkThrottling(fileKey, parsedCommit.priority, rules);
     if (!throttleCheck.allowed) {
       return {
         should: false,
@@ -213,7 +214,7 @@ function shouldSendNotification(parsedCommit, rules, fileKey) {
   }
   
   // Check throttling for default notification types
-  const throttleCheck = checkThrottling(fileKey, commitType.priority, rules);
+  const throttleCheck = checkThrottling(fileKey, parsedCommit.priority, rules);
   if (!throttleCheck.allowed) {
     return {
       should: false,
@@ -230,7 +231,7 @@ function shouldSendNotification(parsedCommit, rules, fileKey) {
 function checkThrottling(fileKey, priority, rules) {
   const now = Date.now();
   const lastNotification = notificationHistory.get(fileKey);
-  const throttleMinutes = rules.throttleMinutes[priority] || 30;
+  const throttleMinutes = rules.throttleMinutes[priority] || rules.throttleMinutes['normal'] || 60;
   const throttleMs = throttleMinutes * 60 * 1000;
   
   if (lastNotification && (now - lastNotification) < throttleMs) {
@@ -268,6 +269,25 @@ async function sendSlackNotification({ library, fileKey, publishedBy, parsedComm
     }
   ];
   
+  // Add priority indicator for breaking changes and priority flags (before content)
+  if (parsedCommit.type === 'breaking') {
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `🚨 *BREAKING CHANGE*`
+      }
+    });
+  } else if (/\bpriority\b/i.test(parsedCommit.raw)) {
+    blocks.push({
+      type: 'section', 
+      text: {
+        type: 'mrkdwn',
+        text: `⚠️ *PLEASE REVIEW*`
+      }
+    });
+  }
+  
   // If we have bullet points, show them as a list
   if (bulletPoints && bulletPoints.length > 0) {
     const bulletText = bulletPoints.map(point => `• ${point}`).join('\n');
@@ -289,32 +309,13 @@ async function sendSlackNotification({ library, fileKey, publishedBy, parsedComm
     });
   }
   
-  // Add priority indicator for high/critical items
-  if (commitType.priority === 'critical') {
-    blocks.push({
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `🚨 *BREAKING CHANGE* - This may require immediate attention`
-      }
-    });
-  } else if (commitType.priority === 'high') {
-    blocks.push({
-      type: 'section', 
-      text: {
-        type: 'mrkdwn',
-        text: `⚠️ *High Priority* - Review recommended`
-      }
-    });
-  }
-  
   // Context footer
   blocks.push({
     type: 'context',
     elements: [
       {
         type: 'mrkdwn',
-        text: `Published by *${publishedBy}* • <${figmaUrl}|View in Figma> • Type: \`${type}\` • ${reason}`
+        text: `Published by *${publishedBy}* • <${figmaUrl}|View in Figma>`
       }
     ]
   });
