@@ -60,7 +60,7 @@ const COMMIT_TYPES = {
     notify: false
   },
   breaking: {
-    emoji: '💥',
+    emoji: '🚨',
     label: 'BREAKING',
     notify: true,
     priority: 'critical'
@@ -257,6 +257,12 @@ async function sendSlackNotification({ library, fileKey, publishedBy, parsedComm
     const formattedComponents = components.map(comp => `\`${comp}\``).join(', ');
     title += `: ${formattedComponents}`;
   }
+  
+  // Add priority flag to title if present (breaking or manual priority)
+  if (parsedCommit.type === 'breaking' || /\bpriority\b/i.test(parsedCommit.raw)) {
+    title += ` ⚠️ *PLEASE REVIEW* ⚠️`;
+  }
+  
   title += ` - ${library.name}*`;
   
   const blocks = [
@@ -268,25 +274,6 @@ async function sendSlackNotification({ library, fileKey, publishedBy, parsedComm
       }
     }
   ];
-  
-  // Add priority indicator for breaking changes and priority flags (before content)
-  if (parsedCommit.type === 'breaking') {
-    blocks.push({
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `🚨 *BREAKING CHANGE*`
-      }
-    });
-  } else if (/\bpriority\b/i.test(parsedCommit.raw)) {
-    blocks.push({
-      type: 'section', 
-      text: {
-        type: 'mrkdwn',
-        text: `⚠️ *PLEASE REVIEW*`
-      }
-    });
-  }
   
   // If we have bullet points, show them as a list
   if (bulletPoints && bulletPoints.length > 0) {
