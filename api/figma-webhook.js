@@ -77,8 +77,8 @@ const LIBRARY_CONFIG = {
       neverNotify: ['chore', 'docs', 'patch'],
       throttleMinutes: {
         critical: 0,
-        high: 30,
-        normal: 60
+        high: 0,
+        normal: 0
       }
     }
   }
