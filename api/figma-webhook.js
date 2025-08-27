@@ -260,7 +260,7 @@ async function sendSlackNotification({ library, fileKey, publishedBy, parsedComm
   
   const blocks = [
     {
-      type: 'header',
+      type: 'section',
       text: {
         type: 'plain_text',
         text: title,
