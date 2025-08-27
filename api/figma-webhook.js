@@ -248,23 +248,22 @@ async function sendSlackNotification({ library, fileKey, publishedBy, parsedComm
   const figmaUrl = `https://www.figma.com/file/${fileKey}`;
   const { type, scope, message, components, bulletPoints, commitType } = parsedCommit;
   
-  // Create title with emoji and type
-  let title = `${commitType.emoji} ${commitType.label}`;
+  // Create title with emoji and type as a large markdown section
+  let title = `*${commitType.emoji} ${commitType.label}`;
   if (scope) {
     title += ` (${scope})`;
   } else if (components && components.length > 0) {
     const formattedComponents = components.map(comp => `\`${comp}\``).join(', ');
     title += `: ${formattedComponents}`;
   }
-  title += ` - ${library.name}`;
+  title += ` - ${library.name}*`;
   
   const blocks = [
     {
       type: 'section',
       text: {
-        type: 'plain_text',
-        text: title,
-        emoji: true
+        type: 'mrkdwn',
+        text: title
       }
     }
   ];
