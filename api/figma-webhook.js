@@ -12,77 +12,66 @@ const COMMIT_TYPES = {
   feat: {
     emoji: '✨',
     label: 'Feature',
-    color: '#28a745',
     notify: true,
     priority: 'high'
   },
   fix: {
     emoji: '🐛',
-    label: 'Fix', 
-    color: '#dc3545',
+    label: 'Bugfix', 
     notify: true,
     priority: 'medium'
   },
   update: {
     emoji: '🔄',
     label: 'Update',
-    color: '#007bff', 
     notify: true,
     priority: 'medium'
   },
   patch: {
     emoji: '🩹',
     label: 'Patch',
-    color: '#6f42c1',
     notify: false, // Only notify if forced
     priority: 'low'
   },
   docs: {
     emoji: '📚',
     label: 'Documentation',
-    color: '#17a2b8',
     notify: false,
     priority: 'low'
   },
   style: {
     emoji: '💄',
     label: 'Style',
-    color: '#e83e8c',
     notify: false,
     priority: 'low'
   },
   refactor: {
     emoji: '♻️',
     label: 'Refactor',
-    color: '#fd7e14',
     notify: true,
     priority: 'medium'
   },
   perf: {
     emoji: '⚡',
     label: 'Performance',
-    color: '#20c997',
     notify: true,
     priority: 'high'
   },
   test: {
     emoji: '🧪',
     label: 'Test',
-    color: '#6c757d',
     notify: false,
     priority: 'low'
   },
   chore: {
     emoji: '🔧',
     label: 'Chore',
-    color: '#6c757d',
     notify: false,
     priority: 'low'
   },
   breaking: {
     emoji: '💥',
     label: 'BREAKING CHANGE',
-    color: '#dc3545',
     notify: true,
     priority: 'critical'
   }
@@ -107,14 +96,20 @@ const LIBRARY_CONFIG = {
 };
 
 function parseSemanticCommit(description) {
-  // Regex to match: type(scope): description or type: description
-  // Examples: 
-  // "feat(buttons): add hover states for primary buttons"
-  // "fix: resolve alignment issue in navigation"
-  // "breaking!: remove deprecated color tokens"
+  // Enhanced regex to match multiple formats:
+  // 1. type(scope): description
+  // 2. type: Component1, Component2, Component3
+  //    - bullet point 1
+  //    - bullet point 2
+  // 3. type: description
+  // 4. breaking!: description
   
+  const lines = description.trim().split('\n');
+  const firstLine = lines[0].trim();
+  
+  // Match the first line for type and components/scope
   const semanticRegex = /^(feat|fix|update|patch|docs|style|refactor|perf|test|chore|breaking)(\([^)]+\))?(!)?:\s*(.+)$/i;
-  const match = description.trim().match(semanticRegex);
+  const match = firstLine.match(semanticRegex);
   
   if (!match) {
     return {
@@ -124,14 +119,42 @@ function parseSemanticCommit(description) {
     };
   }
   
-  const [, type, scope, forceFlag, message] = match;
+  const [, type, scope, forceFlag, afterColon] = match;
+  
+  // Parse components and bullet points
+  let components = [];
+  let bulletPoints = [];
+  let message = afterColon.trim();
+  
+  // Check if afterColon looks like a component list (comma-separated, no sentence structure)
+  const componentListRegex = /^[A-Z][a-zA-Z0-9]*(?:\s*,\s*[A-Z][a-zA-Z0-9]*)*$/;
+  if (componentListRegex.test(afterColon.trim())) {
+    // Parse as component list
+    components = afterColon.split(',').map(c => c.trim()).filter(c => c);
+    
+    // Parse bullet points from remaining lines
+    bulletPoints = lines.slice(1)
+      .map(line => line.trim())
+      .filter(line => line.startsWith('-') || line.startsWith('•'))
+      .map(line => line.replace(/^[-•]\s*/, '').trim())
+      .filter(line => line);
+    
+    // Create a summary message
+    if (bulletPoints.length > 0) {
+      message = bulletPoints[0]; // Use first bullet as main message
+    } else {
+      message = `Updated ${components.join(', ')}`;
+    }
+  }
   
   return {
     isValid: true,
     type: type.toLowerCase(),
     scope: scope ? scope.slice(1, -1) : null, // Remove parentheses
+    components: components,
+    bulletPoints: bulletPoints,
     isForced: !!forceFlag,
-    message: message.trim(),
+    message: message,
     raw: description,
     commitType: COMMIT_TYPES[type.toLowerCase()]
   };
@@ -223,10 +246,17 @@ function checkThrottling(fileKey, priority, rules) {
 
 async function sendSlackNotification({ library, fileKey, publishedBy, parsedCommit, reason }) {
   const figmaUrl = `https://www.figma.com/file/${fileKey}`;
-  const { type, scope, message, commitType } = parsedCommit;
+  const { type, scope, message, components, bulletPoints, commitType } = parsedCommit;
   
   // Create title with emoji and type
-  const title = `${commitType.emoji} ${commitType.label}${scope ? ` (${scope})` : ''} - ${library.name}`;
+  let title = `${commitType.emoji} ${commitType.label}`;
+  if (scope) {
+    title += ` (${scope})`;
+  } else if (components && components.length > 0) {
+    const formattedComponents = components.map(comp => `\`${comp}\``).join(', ');
+    title += `: ${formattedComponents}`;
+  }
+  title += ` - ${library.name}`;
   
   const blocks = [
     {
@@ -236,15 +266,29 @@ async function sendSlackNotification({ library, fileKey, publishedBy, parsedComm
         text: title,
         emoji: true
       }
-    },
-    {
+    }
+  ];
+  
+  // If we have bullet points, show them as a list
+  if (bulletPoints && bulletPoints.length > 0) {
+    const bulletText = bulletPoints.map(point => `• ${point}`).join('\n');
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: bulletText
+      }
+    });
+  } else {
+    // Fallback to regular message display
+    blocks.push({
       type: 'section',
       text: {
         type: 'mrkdwn',
         text: `*${message}*`
       }
-    }
-  ];
+    });
+  }
   
   // Add priority indicator for high/critical items
   if (commitType.priority === 'critical') {
