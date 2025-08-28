@@ -67,6 +67,18 @@ const COMMIT_TYPES = {
   }
 };
 
+// Mention mappings (groups and individuals)
+const MENTION_GROUPS = {
+  // User groups
+  'designers': '<!subteam^S01LM83PSGZ>',    // Designers group  
+  'everyone': '<!everyone>',                // @everyone
+  'channel': '<!channel>',                  // @channel
+  'here': '<!here>',                        // @here
+  
+  // Individual users (add your team members)
+  'greg': '<@U093TFW55N2>',                 // Greg's user ID
+};
+
 // Configuration for your Figma libraries
 const LIBRARY_CONFIG = {
   'FFGrhBbe4JRpbBIuvOPhNP': {
@@ -142,6 +154,10 @@ function parseSemanticCommit(description) {
   // Check if development is complete
   const isDevComplete = /\[dev-complete\]/i.test(description);
   
+  // Parse mentions (e.g., [@designers], [@developers], [@everyone])
+  const mentionMatches = description.match(/\[@([^\]]+)\]/g);
+  const mentions = mentionMatches ? mentionMatches.map(match => match.slice(2, -1).toLowerCase()) : [];
+  
   // Set priority based on type and flags
   let priority = 'normal';
   if (type.toLowerCase() === 'breaking') {
@@ -159,6 +175,7 @@ function parseSemanticCommit(description) {
     isForced: !!forceFlag,
     priority: priority,
     isDevComplete: isDevComplete,
+    mentions: mentions,
     message: message,
     raw: description,
     commitType: COMMIT_TYPES[type.toLowerCase()]
@@ -251,7 +268,7 @@ function checkThrottling(fileKey, priority, rules) {
 
 async function sendSlackNotification({ library, fileKey, publishedBy, parsedCommit, reason }) {
   const figmaUrl = `https://www.figma.com/file/${fileKey}`;
-  const { type, scope, message, components, bulletPoints, commitType, isDevComplete } = parsedCommit;
+  const { type, scope, message, components, bulletPoints, commitType, isDevComplete, mentions } = parsedCommit;
   
   // Create title with emoji and type as a large markdown section
   let title = `*${commitType.emoji} ${commitType.label}`;
@@ -310,6 +327,21 @@ async function sendSlackNotification({ library, fileKey, publishedBy, parsedComm
       text: `${designStatus}    ${devStatus}`
     }
   });
+  
+  // Add mentions if present
+  if (mentions && mentions.length > 0) {
+    const mentionText = mentions
+      .map(mention => MENTION_GROUPS[mention] || `@${mention}`)
+      .join(' ');
+    
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: mentionText
+      }
+    });
+  }
   
   // Context footer
   blocks.push({
