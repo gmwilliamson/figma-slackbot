@@ -279,26 +279,36 @@ async function sendSlackNotification({ library, fileKey, publishedBy, parsedComm
     title += `: ${formattedComponents}`;
   }
   
-  // Add priority flag to title if present (breaking or manual priority)
-  if (parsedCommit.type === 'breaking' || /\[priority\]/i.test(parsedCommit.raw)) {
-    title += ` - ⚠️ PLEASE REVIEW ⚠️`;
-  }
-  
   title += `*`;
   
   const blocks = [];
   
-  // Add mentions at the very top if present
+  // Check if this is a priority message (priority flag or breaking change)
+  const isPriority = parsedCommit.type === 'breaking' || /\[priority\]/i.test(parsedCommit.raw);
+  
+  // Build mentions array starting with priority mentions
+  let allMentions = [];
+  
+  // Add automatic priority mention if this is a priority message
+  if (isPriority) {
+    allMentions.push(`${MENTION_GROUPS['designers']} - ⚠️ PLEASE REVIEW ⚠️`);
+  }
+  
+  // Add explicit mentions from the commit message
   if (mentions && mentions.length > 0) {
-    const mentionText = mentions
+    const explicitMentions = mentions
       .map(mention => MENTION_GROUPS[mention] || `@${mention}`)
       .join(' ');
-    
+    allMentions.push(explicitMentions);
+  }
+  
+  // Add all mentions at the very top if any exist
+  if (allMentions.length > 0) {
     blocks.push({
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: mentionText
+        text: allMentions.join('\n')
       }
     });
   }
