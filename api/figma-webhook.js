@@ -291,7 +291,7 @@ async function sendSlackNotification({ library, fileKey, publishedBy, parsedComm
   
   // Add automatic priority mention if this is a priority message
   if (isPriority) {
-    allMentions.push(`${MENTION_GROUPS['designers']} - ⚠️ PLEASE REVIEW ⚠️`);
+    allMentions.push(`${MENTION_GROUPS['greg']} - ⚠️ PLEASE REVIEW ⚠️`);
   }
   
   // Add explicit mentions from the commit message
