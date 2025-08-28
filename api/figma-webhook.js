@@ -286,15 +286,31 @@ async function sendSlackNotification({ library, fileKey, publishedBy, parsedComm
   
   title += `*`;
   
-  const blocks = [
-    {
+  const blocks = [];
+  
+  // Add mentions at the very top if present
+  if (mentions && mentions.length > 0) {
+    const mentionText = mentions
+      .map(mention => MENTION_GROUPS[mention] || `@${mention}`)
+      .join(' ');
+    
+    blocks.push({
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: title
+        text: mentionText
       }
+    });
+  }
+  
+  // Add the main title
+  blocks.push({
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: title
     }
-  ];
+  });
   
   // If we have bullet points, show them as a list
   if (bulletPoints && bulletPoints.length > 0) {
@@ -327,21 +343,6 @@ async function sendSlackNotification({ library, fileKey, publishedBy, parsedComm
       text: `${designStatus}    ${devStatus}`
     }
   });
-  
-  // Add mentions if present
-  if (mentions && mentions.length > 0) {
-    const mentionText = mentions
-      .map(mention => MENTION_GROUPS[mention] || `@${mention}`)
-      .join(' ');
-    
-    blocks.push({
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: mentionText
-      }
-    });
-  }
   
   // Context footer
   blocks.push({
