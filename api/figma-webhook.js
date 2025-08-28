@@ -136,8 +136,11 @@ function parseSemanticCommit(description) {
     }
   }
   
-  // Check if priority flag is set anywhere in the description
-  const hasPriorityFlag = /\bpriority\b/i.test(description);
+  // Check if priority flag is set anywhere in the description (requires brackets)
+  const hasPriorityFlag = /\[priority\]/i.test(description);
+  
+  // Check if development is complete
+  const isDevComplete = /\[dev-complete\]/i.test(description);
   
   // Set priority based on type and flags
   let priority = 'normal';
@@ -155,6 +158,7 @@ function parseSemanticCommit(description) {
     bulletPoints: bulletPoints,
     isForced: !!forceFlag,
     priority: priority,
+    isDevComplete: isDevComplete,
     message: message,
     raw: description,
     commitType: COMMIT_TYPES[type.toLowerCase()]
@@ -247,7 +251,7 @@ function checkThrottling(fileKey, priority, rules) {
 
 async function sendSlackNotification({ library, fileKey, publishedBy, parsedCommit, reason }) {
   const figmaUrl = `https://www.figma.com/file/${fileKey}`;
-  const { type, scope, message, components, bulletPoints, commitType } = parsedCommit;
+  const { type, scope, message, components, bulletPoints, commitType, isDevComplete } = parsedCommit;
   
   // Create title with emoji and type as a large markdown section
   let title = `*${commitType.emoji} ${commitType.label}`;
@@ -259,7 +263,7 @@ async function sendSlackNotification({ library, fileKey, publishedBy, parsedComm
   }
   
   // Add priority flag to title if present (breaking or manual priority)
-  if (parsedCommit.type === 'breaking' || /\bpriority\b/i.test(parsedCommit.raw)) {
+  if (parsedCommit.type === 'breaking' || /\[priority\]/i.test(parsedCommit.raw)) {
     title += ` - ⚠️ PLEASE REVIEW ⚠️`;
   }
   
@@ -295,6 +299,17 @@ async function sendSlackNotification({ library, fileKey, publishedBy, parsedComm
       }
     });
   }
+  
+  // Add status section (design always ready, dev status based on flag)
+  const designStatus = '🟢 Design';
+  const devStatus = isDevComplete ? '🟢 Development' : '🟡 Development';
+  blocks.push({
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: `${designStatus}    ${devStatus}`
+    }
+  });
   
   // Context footer
   blocks.push({
