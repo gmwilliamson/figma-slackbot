@@ -301,8 +301,8 @@ async function sendSlackNotification({ library, fileKey, publishedBy, parsedComm
   }
   
   // Add status section (design always ready, dev status based on flag)
-  const designStatus = '🟢 Design';
-  const devStatus = isDevComplete ? '🟢 Development' : '🟡 Development';
+  const designStatus = '`🟢 Design`';
+  const devStatus = isDevComplete ? '`🟢 Development`' : '`🟡 Development`';
   blocks.push({
     type: 'section',
     text: {
