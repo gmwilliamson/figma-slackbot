@@ -4,8 +4,7 @@ import crypto from 'crypto';
 
 const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
 
-// Simple in-memory storage for throttling
-const notificationHistory = new Map();
+// No throttling - send notifications immediately
 
 // Semantic commit types and their configurations
 const COMMIT_TYPES = {
@@ -86,12 +85,7 @@ const LIBRARY_CONFIG = {
     channel: '#test-figma-updates',
     rules: {
       alwaysNotify: ['feat', 'breaking', 'fix', 'update'],
-      neverNotify: ['chore', 'docs', 'patch'],
-      throttleMinutes: {
-        critical: 0,
-        high: 0,
-        normal: 0
-      }
+      neverNotify: ['chore', 'docs', 'patch']
     }
   }
 };
@@ -158,12 +152,12 @@ function parseSemanticCommit(description) {
   const mentionMatches = description.match(/\[@([^\]]+)\]/g);
   const mentions = mentionMatches ? mentionMatches.map(match => match.slice(2, -1).toLowerCase()) : [];
   
-  // Set priority based on type and flags
+  // Keep priority for message formatting only
   let priority = 'normal';
   if (type.toLowerCase() === 'breaking') {
-    priority = 'critical'; // Breaking changes are always critical for throttling
+    priority = 'critical';
   } else if (hasPriorityFlag) {
-    priority = 'high'; // Any priority flag gets high priority for throttling
+    priority = 'high';
   }
 
   return {
@@ -211,15 +205,6 @@ function shouldSendNotification(parsedCommit, rules, fileKey) {
   
   // Check if type is in alwaysNotify list
   if (rules.alwaysNotify?.includes(type)) {
-    // Still need to check throttling
-    const throttleCheck = checkThrottling(fileKey, parsedCommit.priority, rules);
-    if (!throttleCheck.allowed) {
-      return {
-        should: false,
-        reason: throttleCheck.reason
-      };
-    }
-    
     return {
       should: true,
       reason: `Type '${type}' is in always notify list`
@@ -234,37 +219,13 @@ function shouldSendNotification(parsedCommit, rules, fileKey) {
     };
   }
   
-  // Check throttling for default notification types
-  const throttleCheck = checkThrottling(fileKey, parsedCommit.priority, rules);
-  if (!throttleCheck.allowed) {
-    return {
-      should: false,
-      reason: throttleCheck.reason
-    };
-  }
-  
   return {
     should: true,
     reason: `Type '${type}' meets notification criteria`
   };
 }
 
-function checkThrottling(fileKey, priority, rules) {
-  const now = Date.now();
-  const lastNotification = notificationHistory.get(fileKey);
-  const throttleMinutes = rules.throttleMinutes[priority] || rules.throttleMinutes['normal'] || 60;
-  const throttleMs = throttleMinutes * 60 * 1000;
-  
-  if (lastNotification && (now - lastNotification) < throttleMs) {
-    const remainingMinutes = Math.ceil((throttleMs - (now - lastNotification)) / 60000);
-    return {
-      allowed: false,
-      reason: `Throttled (${priority} priority). Next notification in ${remainingMinutes} minutes`
-    };
-  }
-  
-  return { allowed: true };
-}
+
 
 async function sendSlackNotification({ library, fileKey, publishedBy, parsedCommit, reason }) {
   const figmaUrl = `https://www.figma.com/file/${fileKey}`;
@@ -457,8 +418,7 @@ export default async function handler(req, res) {
       reason: notificationCheck.reason
     });
     
-    // Update throttling
-    notificationHistory.set(file_key, Date.now());
+
     
     console.log(`✅ Sent notification for ${parsedCommit.type}: ${parsedCommit.message}`);
     
