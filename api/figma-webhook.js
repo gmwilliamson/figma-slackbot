@@ -344,8 +344,8 @@ async function sendSlackNotification({ library, fileKey, publishedBy, parsedComm
   }
   
   // Context footer with status
-  const designStatus = '🟢 Design';
-  const devStatus = isDevComplete ? '🟢 Development' : '🟡 Development';
+  const designStatus = '`🟢 Design`';
+  const devStatus = isDevComplete ? '`🟢 Development`' : '`🟡 Development`';
   
   blocks.push({
     type: 'context',
