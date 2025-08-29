@@ -118,11 +118,18 @@ function parseSemanticCommit(description) {
   const lines = description.trim().split('\n');
   const firstLine = lines[0].trim();
   
+  // Debug logging
+  console.log('🔍 Parsing description:', JSON.stringify(description));
+  console.log('🔍 First line:', JSON.stringify(firstLine));
+  
   // Match the first line for type and components/scope
   const semanticRegex = /^(feat|fix|update|patch|docs|style|refactor|perf|test|chore|breaking)(\([^)]+\))?(!)?:\s*(.+)$/i;
   const match = firstLine.match(semanticRegex);
   
+  console.log('🔍 Regex match:', match);
+  
   if (!match) {
+    console.log('❌ Parse failed:', 'Not a valid semantic commit format');
     return {
       isValid: false,
       raw: description,
@@ -393,6 +400,7 @@ export default async function handler(req, res) {
     
     console.log(`📝 Received: ${event_type} for ${file_name}`);
     console.log(`💬 Description: "${description}"`);
+    console.log(`🔍 Full webhook payload:`, JSON.stringify(req.body, null, 2));
     
     if (event_type !== 'LIBRARY_PUBLISH') {
       return res.status(200).json({ message: `Ignored ${event_type}` });
