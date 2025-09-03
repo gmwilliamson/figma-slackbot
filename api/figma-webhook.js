@@ -92,16 +92,16 @@ const LIBRARY_CONFIG = {
     name: '01. Foundations',
     channel: '#xfn-ds-fabric-updates',
     rules: {
-      alwaysNotify: ['feat', 'breaking', 'fix', 'update', 'refactor', 'style'],
-      neverNotify: ['perf', 'patch', 'docs', 'test', 'chore']
+      alwaysNotify: ['feat', 'breaking', 'fix', 'update', 'refactor'],
+      neverNotify: ['perf', 'patch', 'docs', 'test', 'chore', 'style']
     }
   },
   'HnYrd6FfB4O1VUV9GuuWe6': {
     name: '02. Components',
     channel: '#xfn-ds-fabric-updates',
     rules: {
-      alwaysNotify: ['feat', 'breaking', 'fix', 'update', 'refactor', 'style'],
-      neverNotify: ['perf', 'patch', 'docs', 'test', 'chore']
+      alwaysNotify: ['feat', 'breaking', 'fix', 'update', 'refactor'],
+      neverNotify: ['perf', 'patch', 'docs', 'test', 'chore', 'style']
     }
   }
 };
