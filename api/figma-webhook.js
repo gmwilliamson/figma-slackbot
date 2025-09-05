@@ -69,7 +69,7 @@ const COMMIT_TYPES = {
 // Mention mappings (groups and individuals)
 const MENTION_GROUPS = {
   // User groups
-  'designers': '<!subteam^S01LM83PSGZ>',    // Designers group  
+  'designers': '<!subteam^S01LM83PSGZ>',    // @designers  
   'everyone': '<!everyone>',                // @everyone
   'channel': '<!channel>',                  // @channel
   'here': '<!here>',                        // @here
@@ -275,7 +275,7 @@ async function sendSlackNotification({ library, fileKey, publishedBy, parsedComm
   
   // Add automatic priority mention if this is a priority message
   if (isPriority) {
-    allMentions.push(`${MENTION_GROUPS['greg']} - ⚠️ PLEASE REVIEW ⚠️`);
+    allMentions.push(`${MENTION_GROUPS['designers']} - ⚠️ PLEASE REVIEW ⚠️`);
   }
   
   // Add explicit mentions from the commit message
