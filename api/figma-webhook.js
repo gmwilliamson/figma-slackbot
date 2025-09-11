@@ -363,17 +363,20 @@ async function deleteMessageByRequestId(requestId) {
   const messageData = sentMessages.get(requestId);
   if (!messageData) {
     console.log(`❌ No message found for request ID: ${requestId}`);
-    return false;
+    console.log(`📊 Current stored messages: ${sentMessages.size}`);
+    return { success: false, reason: 'Message not found in cache', details: `RequestId ${requestId} not tracked` };
   }
+  
+  console.log(`🔍 Found message for ${requestId}:`, messageData);
   
   const result = await deleteSlackMessage(messageData.channel, messageData.timestamp);
   if (result) {
     sentMessages.delete(requestId);
     console.log(`✅ Deleted and removed message for request ID: ${requestId}`);
-    return true;
+    return { success: true, reason: 'Message deleted successfully' };
   }
   
-  return false;
+  return { success: false, reason: 'Slack deletion failed', details: 'Message exists but could not be deleted from Slack' };
 }
 
 // Get all sent messages (for debugging/management)
@@ -536,25 +539,54 @@ export default async function handler(req, res) {
   
   // Handle DELETE requests for message deletion
   if (req.method === 'DELETE') {
-    const { requestId } = req.query;
+    const { requestId, channel, timestamp } = req.query;
     
-    if (!requestId) {
-      return res.status(400).json({ error: 'requestId query parameter required' });
+    // Option 1: Delete by requestId (existing functionality)
+    if (requestId) {
+      const result = await deleteMessageByRequestId(requestId);
+      
+      if (result.success) {
+        return res.status(200).json({ 
+          success: true, 
+          message: `Message with requestId ${requestId} deleted successfully`,
+          reason: result.reason
+        });
+      } else {
+        const statusCode = result.reason === 'Message not found in cache' ? 404 : 500;
+        return res.status(statusCode).json({ 
+          success: false, 
+          message: `Message with requestId ${requestId} could not be deleted`,
+          reason: result.reason,
+          details: result.details,
+          totalMessages: sentMessages.size
+        });
+      }
     }
     
-    const deleted = await deleteMessageByRequestId(requestId);
-    
-    if (deleted) {
-      return res.status(200).json({ 
-        success: true, 
-        message: `Message with requestId ${requestId} deleted successfully` 
-      });
-    } else {
-      return res.status(404).json({ 
-        success: false, 
-        message: `Message with requestId ${requestId} not found or could not be deleted` 
-      });
+    // Option 2: Delete by channel + timestamp (direct deletion)
+    if (channel && timestamp) {
+      const result = await deleteSlackMessage(channel, timestamp);
+      
+      if (result) {
+        return res.status(200).json({ 
+          success: true, 
+          message: `Message ${timestamp} deleted successfully from ${channel}`,
+          channel: channel,
+          timestamp: timestamp
+        });
+      } else {
+        return res.status(500).json({ 
+          success: false, 
+          message: `Failed to delete message ${timestamp} from ${channel}`,
+          channel: channel,
+          timestamp: timestamp
+        });
+      }
     }
+    
+    return res.status(400).json({ 
+      error: 'Either requestId or both channel and timestamp query parameters required' 
+    });
   }
   
   // Handle GET requests for listing sent messages (debugging)
