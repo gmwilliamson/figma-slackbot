@@ -4,7 +4,95 @@ import crypto from 'crypto';
 
 const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
 
-// No throttling - send notifications immediately
+// Request deduplication cache
+const requestCache = new Map();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
+
+// Rate limiting per file key
+const rateLimitCache = new Map();
+const RATE_LIMIT_WINDOW = 30 * 1000; // 30 seconds
+const MAX_REQUESTS_PER_WINDOW = 5; // Max 5 requests per file per 30 seconds
+
+// Message tracking for potential deletion
+const sentMessages = new Map(); // requestId -> { channel, timestamp, messageId }
+
+// Clean up old cache entries periodically
+setInterval(() => {
+  const now = Date.now();
+  
+  // Clean deduplication cache
+  for (const [key, timestamp] of requestCache.entries()) {
+    if (now - timestamp > CACHE_DURATION) {
+      requestCache.delete(key);
+    }
+  }
+  
+  // Clean rate limit cache
+  for (const [fileKey, requests] of rateLimitCache.entries()) {
+    const validRequests = requests.filter(timestamp => now - timestamp < RATE_LIMIT_WINDOW);
+    if (validRequests.length === 0) {
+      rateLimitCache.delete(fileKey);
+    } else {
+      rateLimitCache.set(fileKey, validRequests);
+    }
+  }
+  
+  // Clean sent messages cache (keep for 24 hours)
+  const MESSAGE_RETENTION = 24 * 60 * 60 * 1000; // 24 hours
+  for (const [requestId, messageData] of sentMessages.entries()) {
+    if (now - messageData.sentAt > MESSAGE_RETENTION) {
+      sentMessages.delete(requestId);
+    }
+  }
+}, 60 * 1000); // Clean every minute
+
+// Generate a unique request identifier based on webhook content
+function generateRequestId(fileKey, description, triggeredBy, timestamp) {
+  const content = `${fileKey}-${description.trim()}-${triggeredBy}-${Math.floor(timestamp / 10000)}`; // Round to 10 second intervals
+  return crypto.createHash('md5').update(content).digest('hex');
+}
+
+// Check if this request is a duplicate
+function isDuplicateRequest(requestId) {
+  const now = Date.now();
+  
+  if (requestCache.has(requestId)) {
+    const previousTimestamp = requestCache.get(requestId);
+    const timeDiff = now - previousTimestamp;
+    
+    console.log(`🔄 Duplicate request detected: ${requestId} (${timeDiff}ms ago)`);
+    return true;
+  }
+  
+  // Store this request
+  requestCache.set(requestId, now);
+  console.log(`🆕 New request: ${requestId}`);
+  return false;
+}
+
+// Check rate limiting for a file key
+function checkRateLimit(fileKey) {
+  const now = Date.now();
+  
+  if (!rateLimitCache.has(fileKey)) {
+    rateLimitCache.set(fileKey, []);
+  }
+  
+  const requests = rateLimitCache.get(fileKey);
+  const validRequests = requests.filter(timestamp => now - timestamp < RATE_LIMIT_WINDOW);
+  
+  if (validRequests.length >= MAX_REQUESTS_PER_WINDOW) {
+    console.log(`🚨 Rate limit exceeded for ${fileKey}: ${validRequests.length} requests in last ${RATE_LIMIT_WINDOW/1000}s`);
+    return false;
+  }
+  
+  // Add current request
+  validRequests.push(now);
+  rateLimitCache.set(fileKey, validRequests);
+  console.log(`📊 Rate limit check passed for ${fileKey}: ${validRequests.length}/${MAX_REQUESTS_PER_WINDOW} requests`);
+  
+  return true;
+}
 
 // Semantic commit types and their configurations
 const COMMIT_TYPES = {
@@ -250,7 +338,58 @@ function shouldSendNotification(parsedCommit, rules, fileKey) {
 
 
 
-async function sendSlackNotification({ library, fileKey, publishedBy, parsedCommit, reason }) {
+async function deleteSlackMessage(channel, timestamp) {
+  try {
+    const result = await slack.chat.delete({
+      channel: channel,
+      ts: timestamp
+    });
+    
+    if (result.ok) {
+      console.log(`🗑️  Successfully deleted message ${timestamp} from ${channel}`);
+      return result;
+    } else {
+      console.error(`❌ Failed to delete message: ${result.error}`);
+      return null;
+    }
+  } catch (error) {
+    console.error('❌ Error deleting Slack message:', error);
+    return null;
+  }
+}
+
+// Delete a message by request ID
+async function deleteMessageByRequestId(requestId) {
+  const messageData = sentMessages.get(requestId);
+  if (!messageData) {
+    console.log(`❌ No message found for request ID: ${requestId}`);
+    return false;
+  }
+  
+  const result = await deleteSlackMessage(messageData.channel, messageData.timestamp);
+  if (result) {
+    sentMessages.delete(requestId);
+    console.log(`✅ Deleted and removed message for request ID: ${requestId}`);
+    return true;
+  }
+  
+  return false;
+}
+
+// Get all sent messages (for debugging/management)
+function getSentMessages() {
+  return Array.from(sentMessages.entries()).map(([requestId, data]) => ({
+    requestId,
+    ...data
+  }));
+}
+
+// Get sent message by request ID
+function getSentMessage(requestId) {
+  return sentMessages.get(requestId);
+}
+
+async function sendSlackNotification({ library, fileKey, publishedBy, parsedCommit, reason, requestId }) {
   const figmaUrl = `https://www.figma.com/file/${fileKey}`;
   const { type, scope, message, components, bulletPoints, commitType, isDevComplete, mentions } = parsedCommit;
   
@@ -355,6 +494,20 @@ async function sendSlackNotification({ library, fileKey, publishedBy, parsedComm
   try {
     const result = await slack.chat.postMessage(message_payload);
     console.log(`✅ Sent ${type} notification:`, result.ts);
+    
+    // Store message details for potential deletion
+    if (requestId && result.ok) {
+      sentMessages.set(requestId, {
+        channel: library.channel,
+        timestamp: result.ts,
+        messageId: result.ts,
+        sentAt: Date.now(),
+        fileKey: fileKey,
+        commitType: type
+      });
+      console.log(`📝 Stored message ${result.ts} for potential deletion with requestId: ${requestId}`);
+    }
+    
     return result;
   } catch (error) {
     console.error('❌ Error sending Slack message:', error);
@@ -372,8 +525,53 @@ function verifyWebhookSignature(body, signature, secret) {
 }
 
 export default async function handler(req, res) {
+  const startTime = Date.now();
+  const requestTimestamp = new Date().toISOString();
+  
+  console.log(`\n🔄 [${requestTimestamp}] New ${req.method} request received`);
+  
   if (req.method === 'OPTIONS') {
     return res.status(200).json({ message: 'OK' });
+  }
+  
+  // Handle DELETE requests for message deletion
+  if (req.method === 'DELETE') {
+    const { requestId } = req.query;
+    
+    if (!requestId) {
+      return res.status(400).json({ error: 'requestId query parameter required' });
+    }
+    
+    const deleted = await deleteMessageByRequestId(requestId);
+    
+    if (deleted) {
+      return res.status(200).json({ 
+        success: true, 
+        message: `Message with requestId ${requestId} deleted successfully` 
+      });
+    } else {
+      return res.status(404).json({ 
+        success: false, 
+        message: `Message with requestId ${requestId} not found or could not be deleted` 
+      });
+    }
+  }
+  
+  // Handle GET requests for listing sent messages (debugging)
+  if (req.method === 'GET') {
+    const { requestId } = req.query;
+    
+    if (requestId) {
+      const message = getSentMessage(requestId);
+      if (message) {
+        return res.status(200).json({ message });
+      } else {
+        return res.status(404).json({ error: 'Message not found' });
+      }
+    }
+    
+    const messages = getSentMessages();
+    return res.status(200).json({ messages });
   }
   
   if (req.method !== 'POST') {
@@ -402,15 +600,57 @@ export default async function handler(req, res) {
     console.log(`💬 Description: "${description}"`);
     console.log(`🔍 Full webhook payload:`, JSON.stringify(req.body, null, 2));
     
+    // Generate request ID and check for duplicates
+    const requestId = generateRequestId(
+      file_key, 
+      description, 
+      triggered_by?.handle || 'unknown',
+      Date.now()
+    );
+    
+    if (isDuplicateRequest(requestId)) {
+      const processingTime = Date.now() - startTime;
+      console.log(`🚫 [${requestTimestamp}] Ignoring duplicate request: ${requestId} (${processingTime}ms)`);
+      return res.status(200).json({ 
+        success: true,
+        message: 'Duplicate request ignored',
+        requestId,
+        processingTime: `${processingTime}ms`
+      });
+    }
+    
+    // Check rate limiting
+    if (!checkRateLimit(file_key)) {
+      const processingTime = Date.now() - startTime;
+      console.log(`🚫 [${requestTimestamp}] Rate limit exceeded for ${file_key} (${processingTime}ms)`);
+      return res.status(429).json({ 
+        success: false,
+        message: `Rate limit exceeded: too many requests for ${file_key}`,
+        requestId,
+        processingTime: `${processingTime}ms`
+      });
+    }
+    
     if (event_type !== 'LIBRARY_PUBLISH') {
-      return res.status(200).json({ message: `Ignored ${event_type}` });
+      const processingTime = Date.now() - startTime;
+      console.log(`ℹ️  [${requestTimestamp}] Ignored ${event_type} (${processingTime}ms)`);
+      return res.status(200).json({ 
+        message: `Ignored ${event_type}`,
+        requestId,
+        processingTime: `${processingTime}ms`
+      });
     }
     
     // Find library configuration
     const library = LIBRARY_CONFIG[file_key];
     if (!library) {
-      console.log(`ℹ️  File ${file_key} not monitored`);
-      return res.status(200).json({ message: 'File not monitored' });
+      const processingTime = Date.now() - startTime;
+      console.log(`ℹ️  [${requestTimestamp}] File ${file_key} not monitored (${processingTime}ms)`);
+      return res.status(200).json({ 
+        message: 'File not monitored',
+        requestId,
+        processingTime: `${processingTime}ms`
+      });
     }
     
     // Parse semantic commit
@@ -425,11 +665,14 @@ export default async function handler(req, res) {
     );
     
     if (!notificationCheck.should) {
-      console.log(`🚫 Skipped: ${notificationCheck.reason}`);
+      const processingTime = Date.now() - startTime;
+      console.log(`🚫 [${requestTimestamp}] Skipped: ${notificationCheck.reason} (${processingTime}ms)`);
       return res.status(200).json({
         success: true,
         message: `Skipped: ${notificationCheck.reason}`,
-        parsed: parsedCommit
+        parsed: parsedCommit,
+        requestId,
+        processingTime: `${processingTime}ms`
       });
     }
     
@@ -439,24 +682,31 @@ export default async function handler(req, res) {
       fileKey: file_key,
       publishedBy: triggered_by?.handle || 'Unknown',
       parsedCommit,
-      reason: notificationCheck.reason
+      reason: notificationCheck.reason,
+      requestId: requestId
     });
     
 
     
-    console.log(`✅ Sent notification for ${parsedCommit.type}: ${parsedCommit.message}`);
+    const processingTime = Date.now() - startTime;
+    console.log(`✅ [${requestTimestamp}] Sent notification for ${parsedCommit.type}: ${parsedCommit.message}`);
+    console.log(`⏱️  Processing completed in ${processingTime}ms`);
     
     return res.status(200).json({
       success: true,
       message: `Sent ${parsedCommit.type} notification`,
-      parsed: parsedCommit
+      parsed: parsedCommit,
+      requestId,
+      processingTime: `${processingTime}ms`
     });
     
   } catch (error) {
-    console.error('💥 Error:', error);
+    const processingTime = Date.now() - startTime;
+    console.error(`💥 [${requestTimestamp}] Error after ${processingTime}ms:`, error);
     return res.status(500).json({ 
       error: 'Internal server error',
-      message: error.message 
+      message: error.message,
+      processingTime: `${processingTime}ms`
     });
   }
 }
